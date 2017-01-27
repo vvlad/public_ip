@@ -1,40 +1,87 @@
 package public_ip
 
 import (
-  "net/http"
-  "math/rand"
-  "io/ioutil"
-  "fmt"
-  "strings"
-  "errors"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"strings"
+	"time"
+	"regexp"
 )
 
-func IpAddress() (string, error){
+var defaultServices  = []string{
+	"http://echoip.com",
+	"http://ifconfig.co/x-real-ip",
+	"http://icanhazip.com/",
+	"http://ifconfig.io/ip",
+	"http://ip.appspot.com/",
+	"http://curlmyip.com/",
+	"http://ident.me/",
+	"http://whatismyip.akamai.com/",
+	"http://tnx.nl/ip",
+	"http://myip.dnsomatic.com/",
+	"http://ipecho.net/plain",
+	"http://diagnostic.opendns.com/myip",
+}
 
-  services := []string{
-    "http://echoip.com",
-    "http://icanhazip.com",
-  }
+type IpResult struct {
+	Success bool
+	Ip string
+	Error error
+}
 
-  for len(services) > 0 {
+func GetIP(services []string) *IpResult {
+	if services == nil || len(services) == 0 {
+		services = defaultServices
+	}
+	done := make(chan *IpResult)
+	for k := range services {
+		go ipAddress(services[k], done)
+	}
+	for ;; {
+		select{
+		case result := <-done:
+			if result.Success {
+				return result
+			}
+			continue
+		case <-time.After(time.Second * 30):
+			return &IpResult{false, "", errors.New("Timed out")}
+		}
+	}
+}
 
-    index := rand.Intn(len(services))
+func ipAddress(service string, done chan<- *IpResult) {
 
-    service := services[index]
-    services = append(services[:index], services[index+1:]...)
-    resp, err := http.Get(service)
+	resp, err := http.Get(service)
 
-    if err != nil { continue }
+	if err == nil {
 
-    defer resp.Body.Close()
+		defer resp.Body.Close()
+		address, err := ioutil.ReadAll(resp.Body)
+		ip := fmt.Sprintf("%s", strings.TrimSpace(string(address)))
+		if err== nil && checkIp(ip) {
+			sendResult(&IpResult{true, ip, nil}, done)
+			return
+		}
+	}
+	sendResult(&IpResult{false, "", errors.New("Unable to talk with a service")}, done)
+}
 
-    address, err := ioutil.ReadAll(resp.Body)
+func sendResult(result *IpResult, done chan<- *IpResult) {
+	select {
+	case done <- result:
+		return
+	default:
+		return
+	}
+}
 
-    if err != nil { continue }
-
-    return fmt.Sprintf("%s", strings.TrimSpace(string(address))), nil
-
-  }
-
-  return "", errors.New("Unable to talk with a service")
+func checkIp(ip string) bool {
+	match, _ := regexp.MatchString(`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$`, ip)
+	if match {
+		return true
+	}
+	return false
 }
