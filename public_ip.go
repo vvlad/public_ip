@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"regexp"
+	"faunus_backend/shared/logger"
 )
 
 var defaultServices  = []string{
@@ -32,9 +33,11 @@ type IpResult struct {
 }
 
 func GetIP(services []string) *IpResult {
+
 	if services == nil || len(services) == 0 {
 		services = defaultServices
 	}
+	count := len(services)
 	done := make(chan *IpResult)
 	for k := range services {
 		go ipAddress(services[k], done)
@@ -44,6 +47,13 @@ func GetIP(services []string) *IpResult {
 		case result := <-done:
 			if result.Success {
 				return result
+			} else {
+				logger.L.Debug(count)
+				count--
+				if count == 0 {
+					result.Error = errors.New("All services doesn't requested.")
+					return result
+				}
 			}
 			continue
 		case <-time.After(time.Second * 30):
@@ -54,7 +64,13 @@ func GetIP(services []string) *IpResult {
 
 func ipAddress(service string, done chan<- *IpResult) {
 
-	resp, err := http.Get(service)
+	timeout := time.Duration(5 * time.Second)
+	client := http.Client{Timeout: timeout}
+	resp, err := client.Get(service)
+	if err != nil {
+		sendResult(&IpResult{false, "", errors.New("Time out")}, done)
+		return
+	}
 	defer resp.Body.Close()
 
 	if err == nil {
