@@ -55,10 +55,10 @@ func GetIP(services []string) *IpResult {
 func ipAddress(service string, done chan<- *IpResult) {
 
 	resp, err := http.Get(service)
+	defer resp.Body.Close()
 
 	if err == nil {
 
-		defer resp.Body.Close()
 		address, err := ioutil.ReadAll(resp.Body)
 		ip := fmt.Sprintf("%s", strings.TrimSpace(string(address)))
 		if err== nil && checkIp(ip) {
