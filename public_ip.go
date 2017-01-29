@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 	"regexp"
-	"faunus_backend/shared/logger"
 )
 
 var defaultServices  = []string{
