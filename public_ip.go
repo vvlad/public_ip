@@ -48,7 +48,6 @@ func GetIP(services []string) *IpResult {
 			if result.Success {
 				return result
 			} else {
-				logger.L.Debug(count)
 				count--
 				if count == 0 {
 					result.Error = errors.New("All services doesn't requested.")
