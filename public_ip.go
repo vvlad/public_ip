@@ -56,7 +56,7 @@ func GetIP(services []string, to time.Duration) *IpResult {
 			} else {
 				count--
 				if count == 0 {
-					result.Error = errors.New("All services doesn't requested.")
+					result.Error = errors.New("All services doesn't available.")
 					return result
 				}
 			}
