@@ -31,11 +31,18 @@ type IpResult struct {
 	Error error
 }
 
-func GetIP(services []string) *IpResult {
+var timeout time.Duration
+
+func GetIP(services []string, to time.Duration) *IpResult {
 
 	if services == nil || len(services) == 0 {
 		services = defaultServices
 	}
+	if to == 0 {
+		to = time.Duration(10)
+	}
+	timeout = to
+
 	count := len(services)
 	done := make(chan *IpResult)
 	for k := range services {
@@ -54,7 +61,7 @@ func GetIP(services []string) *IpResult {
 				}
 			}
 			continue
-		case <-time.After(time.Second * 30):
+		case <-time.After(time.Second * timeout):
 			return &IpResult{false, "", errors.New("Timed out")}
 		}
 	}
@@ -62,16 +69,18 @@ func GetIP(services []string) *IpResult {
 
 func ipAddress(service string, done chan<- *IpResult) {
 
-	timeout := time.Duration(5 * time.Second)
+	timeout := time.Duration(time.Second * timeout)
 	client := http.Client{Timeout: timeout}
 	resp, err := client.Get(service)
-	defer resp.Body.Close()
+
 	if err != nil {
 		sendResult(&IpResult{false, "", errors.New("Time out")}, done)
 		return
 	}
 
 	if err == nil {
+
+		defer resp.Body.Close()
 
 		address, err := ioutil.ReadAll(resp.Body)
 		ip := fmt.Sprintf("%s", strings.TrimSpace(string(address)))
