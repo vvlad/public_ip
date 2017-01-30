@@ -65,11 +65,11 @@ func ipAddress(service string, done chan<- *IpResult) {
 	timeout := time.Duration(5 * time.Second)
 	client := http.Client{Timeout: timeout}
 	resp, err := client.Get(service)
+	defer resp.Body.Close()
 	if err != nil {
 		sendResult(&IpResult{false, "", errors.New("Time out")}, done)
 		return
 	}
-	defer resp.Body.Close()
 
 	if err == nil {
 
