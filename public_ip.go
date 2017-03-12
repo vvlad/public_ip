@@ -1,40 +1,110 @@
 package public_ip
 
 import (
-  "net/http"
-  "math/rand"
-  "io/ioutil"
-  "fmt"
-  "strings"
-  "errors"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"strings"
+	"time"
+	"regexp"
 )
 
-func IpAddress() (string, error){
+var defaultServices  = []string{
+	"http://echoip.com",
+	"http://ifconfig.co/x-real-ip",
+	"http://icanhazip.com/",
+	"http://ifconfig.io/ip",
+	"http://ip.appspot.com/",
+	"http://curlmyip.com/",
+	"http://ident.me/",
+	"http://whatismyip.akamai.com/",
+	"http://tnx.nl/ip",
+	"http://myip.dnsomatic.com/",
+	"http://ipecho.net/plain",
+	"http://diagnostic.opendns.com/myip",
+}
 
-  services := []string{
-    "http://echoip.com",
-    "http://icanhazip.com",
-  }
+type IpResult struct {
+	Success bool
+	Ip string
+	Error error
+}
 
-  for len(services) > 0 {
+var timeout time.Duration
 
-    index := rand.Intn(len(services))
+func GetIP(services []string, to time.Duration) *IpResult {
 
-    service := services[index]
-    services = append(services[:index], services[index+1:]...)
-    resp, err := http.Get(service)
+	if services == nil || len(services) == 0 {
+		services = defaultServices
+	}
+	if to == 0 {
+		to = time.Duration(10)
+	}
+	timeout = to
 
-    if err != nil { continue }
+	count := len(services)
+	done := make(chan *IpResult)
+	for k := range services {
+		go ipAddress(services[k], done)
+	}
+	for ;; {
+		select{
+		case result := <-done:
+			if result.Success {
+				return result
+			} else {
+				count--
+				if count == 0 {
+					result.Error = errors.New("All services doesn't available.")
+					return result
+				}
+			}
+			continue
+		case <-time.After(time.Second * timeout):
+			return &IpResult{false, "", errors.New("Timed out")}
+		}
+	}
+}
 
-    defer resp.Body.Close()
+func ipAddress(service string, done chan<- *IpResult) {
 
-    address, err := ioutil.ReadAll(resp.Body)
+	timeout := time.Duration(time.Second * timeout)
+	client := http.Client{Timeout: timeout}
+	resp, err := client.Get(service)
 
-    if err != nil { continue }
+	if err != nil {
+		sendResult(&IpResult{false, "", errors.New("Time out")}, done)
+		return
+	}
 
-    return fmt.Sprintf("%s", strings.TrimSpace(string(address))), nil
+	if err == nil {
 
-  }
+		defer resp.Body.Close()
 
-  return "", errors.New("Unable to talk with a service")
+		address, err := ioutil.ReadAll(resp.Body)
+		ip := fmt.Sprintf("%s", strings.TrimSpace(string(address)))
+		if err== nil && checkIp(ip) {
+			sendResult(&IpResult{true, ip, nil}, done)
+			return
+		}
+	}
+	sendResult(&IpResult{false, "", errors.New("Unable to talk with a service")}, done)
+}
+
+func sendResult(result *IpResult, done chan<- *IpResult) {
+	select {
+	case done <- result:
+		return
+	default:
+		return
+	}
+}
+
+func checkIp(ip string) bool {
+	match, _ := regexp.MatchString(`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$`, ip)
+	if match {
+		return true
+	}
+	return false
 }
